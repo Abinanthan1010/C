@@ -1,0 +1,426 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <json-c/json.h>
+
+#define JSON_FILE "employees.json"
+
+// --- Function Prototypes ---
+
+// JSON Handling
+json_object* load_employees_from_file(const char* filename);
+void save_employees_to_file(const char* filename, json_object* root_obj);
+json_object* find_employee_by_id(json_object* root_obj, int id_to_find, int* index);
+
+// UI & Main Loop
+void display_menu();
+void press_any_key_to_continue();
+void clear_input_buffer();
+
+// Core Features
+void query_employee(json_object* root_obj);
+void modify_employee(json_object* root_obj);
+void add_employee(json_object* root_obj);
+void delete_employee(json_object* root_obj);
+
+// Validation & Input
+bool get_validated_id(int* id);
+bool get_validated_string(const char* prompt, char* buffer, size_t size, bool (*validator)(const char*));
+bool get_validated_age(int* age);
+bool is_valid_name(const char* name);
+bool is_valid_mobile(const char* mobile);
+bool get_confirmation();
+
+
+// --- Main Function ---
+int main() {
+    int choice = 0;
+    json_object* root_obj = load_employees_from_file(JSON_FILE);
+
+    if (!root_obj) {
+        return 1; // Exit if file loading failed
+    }
+
+    do {
+        display_menu();
+        printf("Enter the Option Number: ");
+        if (scanf("%d", &choice) != 1) {
+            printf("Invalid input. Please enter a number.\n");
+            clear_input_buffer();
+            choice = 0; // Reset choice
+            press_any_key_to_continue();
+            continue;
+        }
+        clear_input_buffer(); // Consume the rest of the line
+
+        switch (choice) {
+            case 1:
+                query_employee(root_obj);
+                break;
+            case 2:
+                modify_employee(root_obj);
+                break;
+            case 3:
+                add_employee(root_obj);
+                break;
+            case 4:
+                delete_employee(root_obj);
+                break;
+            case 5:
+                printf("Exiting the program.\n");
+                break;
+            default:
+                printf("Invalid option. Please try again.\n");
+        }
+        if (choice != 5) {
+            press_any_key_to_continue();
+        }
+
+    } while (choice != 5);
+
+    // Free the json-c object
+    json_object_put(root_obj);
+    return 0;
+}
+
+// --- UI & Helper Functions ---
+
+void display_menu() {
+    system("clear"); // Use "cls" on Windows
+    printf("=================================\n");
+    printf("   Employee Data Management System\n");
+    printf("=================================\n");
+    printf("Option 1: Query Employee Data\n");
+    printf("Option 2: Update Employee Data\n");
+    printf("Option 3: Add Employee Data\n");
+    printf("Option 4: Delete Employee Data\n");
+    printf("Option 5: Exit\n");
+    printf("---------------------------------\n");
+}
+
+void press_any_key_to_continue() {
+    printf("\nPress any key to hit any key to go back to main menu...\n");
+    getchar();
+}
+
+void clear_input_buffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+
+// --- JSON Handling Functions ---
+
+json_object* load_employees_from_file(const char* filename) {
+    json_object* obj = json_object_from_file(filename);
+    if (!obj) {
+        printf("Error: Could not parse JSON file or file not found: %s\n", filename);
+        return NULL;
+    }
+    return obj;
+}
+
+void save_employees_to_file(const char* filename, json_object* root_obj) {
+    if (json_object_to_file_ext(filename, root_obj, JSON_C_TO_STRING_PRETTY) != 0) {
+        printf("Error: Failed to write to JSON file.\n");
+    } else {
+        printf("Successfully updated the employee database.\n");
+    }
+}
+
+json_object* find_employee_by_id(json_object* root_obj, int id_to_find, int* index_out) {
+    json_object *employees_array, *employee_obj;
+    if (!json_object_object_get_ex(root_obj, "employees", &employees_array)) {
+        return NULL; // "employees" key not found
+    }
+
+    size_t n_employees = json_object_array_length(employees_array);
+    for (size_t i = 0; i < n_employees; i++) {
+        employee_obj = json_object_array_get_idx(employees_array, i);
+        json_object* id_obj;
+        json_object_object_get_ex(employee_obj, "employee_ID", &id_obj);
+        int current_id = atoi(json_object_get_string(id_obj));
+        if (current_id == id_to_find) {
+            if (index_out) *index_out = i;
+            return employee_obj;
+        }
+    }
+    return NULL; // Not found
+}
+
+
+// --- Validation Functions ---
+
+bool is_valid_name(const char* name) {
+    for (int i = 0; name[i] != '\0'; i++) {
+        if (!isalpha(name[i]) && !isspace(name[i])) return false;
+    }
+    return true;
+}
+
+bool is_valid_mobile(const char* mobile) {
+    if (strlen(mobile) != 10) return false;
+    for (int i = 0; i < 10; i++) {
+        if (!isdigit(mobile[i])) return false;
+    }
+    return true;
+}
+
+bool get_validated_id(int* id) {
+    printf("Employee ID is requested.\n");
+    printf("Enter Employee ID: ");
+    char buffer[20];
+    fgets(buffer, sizeof(buffer), stdin);
+    char* endptr;
+    long val = strtol(buffer, &endptr, 10);
+
+    if (endptr == buffer || (*endptr != '\n' && *endptr != '\0') || val <= 0) {
+        printf("Invalid Employee ID. Must be a positive integer.\n");
+        return false;
+    }
+    *id = (int)val;
+    return true;
+}
+
+bool get_validated_string(const char* prompt, char* buffer, size_t size, bool (*validator)(const char*)) {
+    char input[256];
+    printf("%s", prompt);
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0; // Remove newline
+
+    if (validator && !validator(input)) {
+        return false;
+    }
+    strncpy(buffer, input, size - 1);
+    buffer[size - 1] = '\0';
+    return true;
+}
+
+bool get_validated_age(int* age) {
+    printf("Ask for Age of employee.\n");
+    printf("Enter Age: ");
+    char buffer[20];
+    fgets(buffer, sizeof(buffer), stdin);
+    char* endptr;
+    long val = strtol(buffer, &endptr, 10);
+
+    if (endptr == buffer || (*endptr != '\n' && *endptr != '\0')) {
+         printf("Invalid age entered. Please enter numbers only.\n");
+         return false;
+    }
+    if (val < 18 || val > 100) {
+        printf("Age is out of allowed limits (18-100).\n");
+        return false;
+    }
+    *age = (int)val;
+    return true;
+}
+
+
+bool get_confirmation() {
+    printf("Print all employee details and ask user to proceed Y/N.\n");
+    printf("Do you want to proceed? (Y/N): ");
+    char choice = getchar();
+    clear_input_buffer();
+    return (choice == 'Y' || choice == 'y');
+}
+
+
+// --- Core Feature Implementations ---
+
+void query_employee(json_object* root_obj) {
+    int id;
+    if (!get_validated_id(&id)) return;
+
+    json_object* emp = find_employee_by_id(root_obj, id, NULL);
+    if (!emp) {
+        printf("Employee ID doesn't exist.\n");
+        return;
+    }
+
+    // Extract and print data
+    json_object *details, *contact, *id_obj, *name_obj, *age_obj, *phone_obj, *email_obj, *address_obj;
+    json_object_object_get_ex(emp, "employee_ID", &id_obj);
+    json_object_object_get_ex(emp, "employee_details", &details);
+    json_object_object_get_ex(details, "name", &name_obj);
+    json_object_object_get_ex(details, "age", &age_obj);
+    json_object_object_get_ex(details, "contact_details", &contact);
+    json_object_object_get_ex(contact, "phone_number", &phone_obj);
+    json_object_object_get_ex(contact, "email", &email_obj);
+    json_object_object_get_ex(contact, "address", &address_obj);
+
+    printf("\n--- Employee Details ---\n");
+    printf("Employee ID: %s\n", json_object_get_string(id_obj));
+    printf("Name: %s\n", json_object_get_string(name_obj));
+    printf("Mobile Number: %s\n", json_object_get_string(phone_obj));
+    printf("Email: %s\n", json_object_get_string(email_obj));
+    printf("Age: %d\n", json_object_get_int(age_obj));
+    printf("Address: %s\n", json_object_get_string(address_obj));
+    printf("------------------------\n");
+}
+
+void modify_employee(json_object* root_obj) {
+    int id;
+    if (!get_validated_id(&id)) return;
+    
+    json_object* emp = find_employee_by_id(root_obj, id, NULL);
+    if (!emp) {
+        printf("Employee ID doesn't exist.\n");
+        return;
+    }
+    
+    json_object *details, *contact, *name_obj;
+    json_object_object_get_ex(emp, "employee_details", &details);
+    json_object_object_get_ex(details, "name", &name_obj);
+    json_object_object_get_ex(details, "contact_details", &contact);
+
+    printf("\nModifying employee: %s\n", json_object_get_string(name_obj));
+    printf("Only contact number and address can be changed.\n");
+
+    char new_mobile[11];
+    char new_address[100];
+
+    while (true) {
+        if (!get_validated_string("Ask for new mobile number\nEnter new mobile number: ", new_mobile, sizeof(new_mobile), is_valid_mobile)) {
+            printf("Invalid mobile number. Must be exactly 10 digits.\n");
+            continue;
+        }
+        break;
+    }
+
+    if (!get_validated_string("Ask for new address\nEnter new address: ", new_address, sizeof(new_address), NULL)) {
+        // No validation for address, just getting input
+        return;
+    }
+    
+    if (get_confirmation()) {
+        json_object_object_add(contact, "phone_number", json_object_new_string(new_mobile));
+        json_object_object_add(contact, "address", json_object_new_string(new_address));
+        save_employees_to_file(JSON_FILE, root_obj);
+    } else {
+        printf("Modification cancelled.\n");
+    }
+}
+
+
+void add_employee(json_object* root_obj) {
+    int id;
+    printf("New Employee ID number to be created is requested.\n");
+    if (!get_validated_id(&id)) return;
+
+    if (find_employee_by_id(root_obj, id, NULL)) {
+        printf("Return \"Employee ID exists\"\n");
+        return;
+    }
+
+    char name[50], mobile[11], address[100];
+    int age;
+
+    while (true) {
+        if (!get_validated_string("Ask for Name of employee.\nEnter Name: ", name, sizeof(name), is_valid_name)) {
+            printf("Invalid Name. Use only English alphabets and spaces.\n");
+            continue;
+        }
+        break;
+    }
+
+    while (true) {
+        if (!get_validated_string("Ask for Employee mobile number\nEnter Mobile Number: ", mobile, sizeof(mobile), is_valid_mobile)) {
+            printf("Invalid mobile number. Must be exactly 10 digits.\n");
+            continue;
+        }
+        break;
+    }
+
+    while (true) {
+        if (!get_validated_age(&age)) continue;
+        break;
+    }
+
+    get_validated_string("Ask for Address\nEnter Address: ", address, sizeof(address), NULL);
+
+    char email[100];
+    char name_lower[50];
+    int j = 0;
+    // Create a lowercase version of the name for the email
+    for (int i = 0; name[i]; i++) {
+      if(isalnum(name[i])) { // Use only alphanumeric chars for email name part
+         name_lower[j++] = tolower(name[i]);
+      }
+    }
+    name_lower[j] = '\0';
+    snprintf(email, sizeof(email), "%s@maven-silicon.com", name_lower);
+
+    printf("\n--- New Employee Preview ---\n");
+    printf("ID: %d\nName: %s\nMobile: %s\nAge: %d\nAddress: %s\nAuto-generated Email: %s\n",
+           id, name, mobile, age, address, email);
+    printf("----------------------------\n");
+
+    if (get_confirmation()) {
+        // Create new objects
+        json_object* new_emp = json_object_new_object();
+        json_object* details = json_object_new_object();
+        json_object* contact = json_object_new_object();
+        
+        char id_str[10];
+        snprintf(id_str, sizeof(id_str), "%d", id);
+
+        // Build contact details
+        json_object_object_add(contact, "phone_number", json_object_new_string(mobile));
+        json_object_object_add(contact, "email", json_object_new_string(email));
+        json_object_object_add(contact, "address", json_object_new_string(address));
+
+        // Build employee details
+        json_object_object_add(details, "name", json_object_new_string(name));
+        json_object_object_add(details, "age", json_object_new_int(age));
+        json_object_object_add(details, "attendance", json_object_new_boolean(false)); // Default value
+        json_object_object_add(details, "contact_details", contact);
+
+        // Build top-level employee object
+        json_object_object_add(new_emp, "employee_ID", json_object_new_string(id_str));
+        json_object_object_add(new_emp, "employee_details", details);
+
+        // Add to main array
+        json_object* employees_array;
+        json_object_object_get_ex(root_obj, "employees", &employees_array);
+        json_object_array_add(employees_array, new_emp);
+
+        save_employees_to_file(JSON_FILE, root_obj);
+    } else {
+        printf("Adding new employee cancelled.\n");
+    }
+}
+
+
+void delete_employee(json_object* root_obj) {
+    int id, index;
+    if (!get_validated_id(&id)) return;
+
+    json_object* emp = find_employee_by_id(root_obj, id, &index);
+    if (!emp) {
+        printf("Employee ID doesn't exist.\n");
+        return;
+    }
+
+    // Print details before asking for confirmation
+    query_employee(root_obj);
+    
+    printf("\nAsk if the user is sure to delete employee details.\n");
+    if (get_confirmation()) {
+        json_object *employees_array;
+        json_object_object_get_ex(root_obj, "employees", &employees_array);
+        
+        // Delete the employee from the array by its index
+        if (json_object_array_del_idx(employees_array, index, 1) == 0) {
+             save_employees_to_file(JSON_FILE, root_obj);
+             printf("The employee details for employee ID <%d> have been deleted.\n", id);
+        } else {
+            printf("Error: Failed to delete employee from array.\n");
+        }
+    } else {
+        printf("Deletion cancelled.\n");
+    }
+}
+
